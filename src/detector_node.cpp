@@ -13,13 +13,13 @@ CBDetector::CBDetector() :
 	_server.setCallback(boost::bind(&CBDetector::config_callback, this, _1, _2));
 
 	ROS_DEBUG("Setting up publishers and subscribers");
-	_cam_sub = _node.subscribe("/camera/image_raw", 30, &CBDetector::image_callback, this);
+	_cam_sub = _node.subscribe("/webcam/image_raw", 30, &CBDetector::image_callback, this);
 	_cam_pub = _node.advertise<sensor_msgs::Image>("detection_image", 30);
 	_det_pub = _node.advertise<cybird_detector::Detection>("detection", 30);
 
 	ROS_DEBUG("Receiving camera calibration info...");
 	sensor_msgs::CameraInfo ros_cam_param = 
-		*(ros::topic::waitForMessage<sensor_msgs::CameraInfo>("/sim/cc_cam/camera_info", _node));
+		*(ros::topic::waitForMessage<sensor_msgs::CameraInfo>("/webcam/camera_info", _node));
 	parse_cam_params(ros_cam_param);
 }
 
@@ -55,7 +55,19 @@ void CBDetector::config_callback(cybird_detector::DetectorConfig &new_config, in
 
 void CBDetector::image_callback(const sensor_msgs::Image& msg)
 {
-	ROS_INFO("Image callback!");
+	cv_bridge::CvImagePtr img_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+	cv::Ptr<cv::aruco::DetectorParameters> parameters;
+	cv::Mat marker;
+	cv::Ptr<cv::aruco::Dictionary> dictionary=cv::aruco::getPredefinedDictionary(cv::aruco::DICT_7X7_50);
+	for(int i=0; i<50; i++){
+		cv::aruco::drawMarker(dictionary, i, 1000, marker, 1);
+		std::stringstream filename;
+		filename << "./marker" << i << ".jpg";
+		cv::imwrite(filename.str(), marker);
+	}
+	cv::imshow("test", marker);
+	cv::waitKey(3);
+	_cam_pub.publish(img_ptr->toImageMsg());
 }
 
 int main(int argc, char **argv)

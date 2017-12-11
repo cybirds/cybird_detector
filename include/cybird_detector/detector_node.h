@@ -4,9 +4,11 @@
 #include <dynamic_reconfigure/server.h>
 #include <cybird_detector/DetectorConfig.h>
 #include <cybird_detector/Detection.h>
+#include <cv_bridge/cv_bridge.h>
 #include <opencv2/core.hpp>
-#include <vector>
-#include "opencv2/aruco/dictionary.hpp"
+#include "opencv2/aruco.hpp"
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
 
 class CBDetector {
 	public:
