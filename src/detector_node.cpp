@@ -56,17 +56,12 @@ void CBDetector::config_callback(cybird_detector::DetectorConfig &new_config, in
 void CBDetector::image_callback(const sensor_msgs::Image& msg)
 {
 	cv_bridge::CvImagePtr img_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-	cv::Ptr<cv::aruco::DetectorParameters> parameters;
-	cv::Mat marker;
+	//cv::Ptr<cv::aruco::DetectorParameters> parameters;
 	cv::Ptr<cv::aruco::Dictionary> dictionary=cv::aruco::getPredefinedDictionary(cv::aruco::DICT_7X7_50);
-	for(int i=0; i<50; i++){
-		cv::aruco::drawMarker(dictionary, i, 1000, marker, 1);
-		std::stringstream filename;
-		filename << "./marker" << i << ".jpg";
-		cv::imwrite(filename.str(), marker);
-	}
-	cv::imshow("test", marker);
-	cv::waitKey(3);
+	vector<int> markerIds;
+	vector< vector<cv::Point2f> > markerCorners;
+	cv::aruco::detectMarkers(img_ptr->image, dictionary, markerCorners, markerIds);
+	cv::aruco::drawDetectedMarkers(img_ptr->image, markerCorners, markerIds);
 	_cam_pub.publish(img_ptr->toImageMsg());
 }
 
