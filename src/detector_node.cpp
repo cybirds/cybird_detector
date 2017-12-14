@@ -48,6 +48,13 @@ void CBDetector::parse_cam_params(sensor_msgs::CameraInfo ros_cam)
 		"Camera distortion matrix - " << endl << _dist_matrix << endl);
 }
 
+bool CBDetector::calibrate_cam(cybird_detector::CalibrateCamera::Request &req,
+	cybird_detector::CalibrateCamera::Response &res)
+{
+	//Detector parameters?
+	
+}
+
 void CBDetector::config_callback(cybird_detector::DetectorConfig &new_config, int level)
 {
 	ROS_INFO("Reconfigure received!");
@@ -61,7 +68,14 @@ void CBDetector::image_callback(const sensor_msgs::Image& msg)
 	vector<int> markerIds;
 	vector< vector<cv::Point2f> > markerCorners;
 	cv::aruco::detectMarkers(img_ptr->image, dictionary, markerCorners, markerIds);
+
+	vector<cv::Vec3d> rvecs, tvecs;
+	cv::aruco::estimatePoseSingleMarkers(markerCorners, 0.025, _cam_matrix, _dist_matrix, rvecs, tvecs);
+
 	cv::aruco::drawDetectedMarkers(img_ptr->image, markerCorners, markerIds);
+	for(int i=0; i<markerIds.size(); i++) {
+		cv::aruco::drawAxis(img_ptr->image, _cam_matrix, _dist_matrix, rvecs[i], tvecs[i], 0.01);
+	}
 	_cam_pub.publish(img_ptr->toImageMsg());
 }
 
