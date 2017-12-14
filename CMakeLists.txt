@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   video_stream_opencv
   cv_bridge
+  sensor_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -56,11 +57,10 @@ add_message_files(
 )
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+#add_service_files(
+#  FILES
+#  CalibrateCamera.srv
+#)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -73,6 +73,7 @@ add_message_files(
 generate_messages(
   DEPENDENCIES
   std_msgs  # Or other packages containing msgs
+  sensor_msgs
 )
 
 ################################################
