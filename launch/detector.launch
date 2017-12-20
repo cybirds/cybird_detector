@@ -22,5 +22,6 @@
 
    <node pkg="cybird_detector" type="cybird_detector_node" name="cybird_detector">
         <param name="size_mapping" type="str" value="11:0.0275,14:0.14" />
+        <param name="frame_skip" type="int" value="5" />
    </node>
 </launch>

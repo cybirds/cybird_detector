@@ -27,6 +27,9 @@ class CBDetector {
 	std::map<int, float> _size_mapping;
 	double _fovx;
 	double _fovy;
+	int _active_id;
+	int _frame_skip;
+	int _curr_frame;
 	dynamic_reconfigure::Server<cybird_detector::DetectorConfig> _server;
 
 	void draw_vectors(cv::Mat &in, cv::Scalar color, int line_width, int voffset,

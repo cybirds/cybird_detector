@@ -30,6 +30,11 @@ CBDetector::CBDetector() :
 
 	_fovx = 2 * atan(640 / (2 * _cam_matrix.at<float>(0,0))) * (180.0/M_PI); 
     _fovy = 2 * atan(480 / (2 * _cam_matrix.at<float>(1,1))) * (180.0/M_PI);
+	ROS_INFO_STREAM("Camera FOVX: " << _fovx << endl << "Camera FOVY: " << _fovy << endl);
+
+	_active_id = -1;
+	_curr_frame = 0;
+	_node.getParam("frame_skip", _frame_skip);
 }
 
 CBDetector::~CBDetector()
@@ -79,7 +84,9 @@ void CBDetector::parse_cam_params(sensor_msgs::CameraInfo ros_cam)
  */
 void CBDetector::config_callback(cybird_detector::DetectorConfig &new_config, int level)
 {
-	ROS_INFO("Reconfigure received!");
+	ROS_INFO("Reconfigure Request: frame_skip=%d", new_config.frame_skip);
+	_frame_skip = new_config.frame_skip;
+	_curr_frame = 0;
 }
 
 // Print the calculated distance at top of image
@@ -96,46 +103,63 @@ void CBDetector::draw_vectors(cv::Mat &in, cv::Scalar color, int line_width, int
  */
 void CBDetector::image_callback(const sensor_msgs::Image& msg)
 {
-	// Setup output vectors and predefined marker dictionary
-	// TODO: cv::Ptr<cv::aruco::DetectorParameters> parameters;
-	vector<int> marker_ids;
-	vector< vector<cv::Point2f> > marker_corners;
-	cv::Ptr<cv::aruco::Dictionary> dictionary=cv::aruco::getPredefinedDictionary(cv::aruco::DICT_7X7_50);
+	if(_curr_frame == _frame_skip) {
+		// Setup output vectors and predefined marker dictionary
+		// TODO: cv::Ptr<cv::aruco::DetectorParameters> parameters;
+		vector<int> marker_ids;
+		vector< vector<cv::Point2f> > marker_corners;
+		cv::Ptr<cv::aruco::Dictionary> dictionary=cv::aruco::getPredefinedDictionary(cv::aruco::DICT_7X7_50);
 
-	// Convert ROS Image msg to OpenCV Mat
-	cv_bridge::CvImagePtr img_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+		// Convert ROS Image msg to OpenCV Mat
+		cv_bridge::CvImagePtr img_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
 
-	// Detect markers
-	cv::aruco::detectMarkers(img_ptr->image, dictionary, marker_corners, marker_ids);
-
-	// Estimate pose and draw markers
-	for(int i=0; i < marker_ids.size(); i++) {
-		// Only continue if size mapping exists
-		int curr_id = marker_ids[i];
-		if(_size_mapping.find(curr_id) != _size_mapping.end()) {
-			// OpenCV aruco assumes all markers are same size, so must estimate pose one marker at a time
-			vector<cv::Vec3d> rvecs, tvecs;
-			vector<int> single_id = {curr_id};
-			vector< vector<cv::Point2f> > single_corner = {marker_corners[i]};
-			cv::aruco::estimatePoseSingleMarkers(single_corner, _size_mapping[curr_id], _cam_matrix, _dist_matrix, rvecs, tvecs);
-			cv::aruco::drawDetectedMarkers(img_ptr->image, single_corner, single_id);
-			cv::aruco::drawAxis(img_ptr->image, _cam_matrix, _dist_matrix, rvecs[0], tvecs[0], 0.01);
-
-			double distance = sqrt(pow(tvecs[0][0], 2) + pow(tvecs[0][1], 2) + pow(tvecs[0][2], 2));
-			double xoffset = (marker_corners[i][0].x - 640 / 2.0) * (_fovx * (M_PI/180)) / 640;
-            double yoffset = (marker_corners[i][0].y - 480 / 2.0) * (_fovy * (M_PI/180)) / 480;
-			draw_vectors(img_ptr->image, Scalar (0,255,0), 1, (i+1)*20, curr_id, xoffset, yoffset,
-				distance, marker_corners[i][0].x, marker_corners[i][0].y);
-			
-			cybird_detector::Detection det_msg;
-			det_msg.id = curr_id;
-			det_msg.distance = distance;
-			det_msg.xoffset = xoffset;
-			det_msg.yoffset = yoffset;
-			_det_pub.publish(det_msg);
+		// Detect markers
+		cv::aruco::detectMarkers(img_ptr->image, dictionary, marker_corners, marker_ids);
+		if(marker_ids.empty()) {
+			_active_id = -1;
 		}
+
+		// Estimate pose and draw markers
+		for(int i=0; i < marker_ids.size(); i++) {
+			// Only continue if size mapping exists
+			int curr_id = marker_ids[i];
+			if(_size_mapping.find(curr_id) != _size_mapping.end()) {
+
+				// Switch active marker if smaller one is found
+				Scalar color = Scalar(0,0,255);
+				if(_active_id == -1 || find(marker_ids.begin(), marker_ids.end(), _active_id) == marker_ids.end() ||
+					_size_mapping[curr_id] <= _size_mapping[_active_id]) {
+					_active_id = curr_id;
+					color = Scalar(0,255,0);
+				}
+
+				// OpenCV aruco assumes all markers are same size, so must estimate pose one marker at a time
+				vector<cv::Vec3d> rvecs, tvecs;
+				vector<int> single_id = {curr_id};
+				vector< vector<cv::Point2f> > single_corner = {marker_corners[i]};
+				cv::aruco::estimatePoseSingleMarkers(single_corner, _size_mapping[curr_id], _cam_matrix, _dist_matrix, rvecs, tvecs);
+				cv::aruco::drawDetectedMarkers(img_ptr->image, single_corner, single_id, color);
+				cv::aruco::drawAxis(img_ptr->image, _cam_matrix, _dist_matrix, rvecs[0], tvecs[0], 0.01);
+
+				double distance = sqrt(pow(tvecs[0][0], 2) + pow(tvecs[0][1], 2) + pow(tvecs[0][2], 2));
+				double xoffset = (marker_corners[i][0].x - 640 / 2.0) * (_fovx * (M_PI/180)) / 640;
+				double yoffset = (marker_corners[i][0].y - 480 / 2.0) * (_fovy * (M_PI/180)) / 480;
+				draw_vectors(img_ptr->image, color, 1, (i+1)*20, curr_id, xoffset, yoffset,
+					distance, marker_corners[i][0].x, marker_corners[i][0].y);
+				
+				cybird_detector::Detection det_msg;
+				det_msg.id = curr_id;
+				det_msg.distance = distance;
+				det_msg.xoffset = xoffset;
+				det_msg.yoffset = yoffset;
+				_det_pub.publish(det_msg);
+			}
+		}
+		_cam_pub.publish(img_ptr->toImageMsg());
+		_curr_frame = 0;
+	} else {
+		_curr_frame++;
 	}
-	_cam_pub.publish(img_ptr->toImageMsg());
 }
 
 int main(int argc, char **argv)
