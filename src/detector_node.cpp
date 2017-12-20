@@ -3,6 +3,7 @@
 #include <iostream>
 
 using namespace std;
+using namespace cv;
 
 CBDetector::CBDetector() :
 	_node("cybird_detector"),
@@ -26,6 +27,9 @@ CBDetector::CBDetector() :
 	string mapping_str;
 	_node.getParam("size_mapping", mapping_str);
 	parse_size_mapping(mapping_str);
+
+	_fovx = 2 * atan(640 / (2 * _cam_matrix.at<float>(0,0))) * (180.0/M_PI); 
+    _fovy = 2 * atan(480 / (2 * _cam_matrix.at<float>(1,1))) * (180.0/M_PI);
 }
 
 CBDetector::~CBDetector()
@@ -78,6 +82,15 @@ void CBDetector::config_callback(cybird_detector::DetectorConfig &new_config, in
 	ROS_INFO("Reconfigure received!");
 }
 
+// Print the calculated distance at top of image
+void CBDetector::draw_vectors(cv::Mat &in, cv::Scalar color, int line_width, int voffset,
+	int id, double x, double y, double distance, double cx, double cy) {
+    char cad[100];
+    sprintf(cad, "ID:%i, Distance:%0.3fm, X:%0.3f, Y:%0.3f, cX:%0.3f, cY:%0.3f", id, distance, x, y, cx, cy);
+    Point cent(10, voffset);
+    cv::putText(in, cad, cent, FONT_HERSHEY_SIMPLEX, std::max(0.5f,float(line_width)*0.3f), color, line_width);
+}
+
 /**
  * Detects markers, estimates pose, calculates distance and offsets
  */
@@ -107,6 +120,19 @@ void CBDetector::image_callback(const sensor_msgs::Image& msg)
 			cv::aruco::estimatePoseSingleMarkers(single_corner, _size_mapping[curr_id], _cam_matrix, _dist_matrix, rvecs, tvecs);
 			cv::aruco::drawDetectedMarkers(img_ptr->image, single_corner, single_id);
 			cv::aruco::drawAxis(img_ptr->image, _cam_matrix, _dist_matrix, rvecs[0], tvecs[0], 0.01);
+
+			double distance = sqrt(pow(tvecs[0][0], 2) + pow(tvecs[0][1], 2) + pow(tvecs[0][2], 2));
+			double xoffset = (marker_corners[i][0].x - 640 / 2.0) * (_fovx * (M_PI/180)) / 640;
+            double yoffset = (marker_corners[i][0].y - 480 / 2.0) * (_fovy * (M_PI/180)) / 480;
+			draw_vectors(img_ptr->image, Scalar (0,255,0), 1, (i+1)*20, curr_id, xoffset, yoffset,
+				distance, marker_corners[i][0].x, marker_corners[i][0].y);
+			
+			cybird_detector::Detection det_msg;
+			det_msg.id = curr_id;
+			det_msg.distance = distance;
+			det_msg.xoffset = xoffset;
+			det_msg.yoffset = yoffset;
+			_det_pub.publish(det_msg);
 		}
 	}
 	_cam_pub.publish(img_ptr->toImageMsg());
