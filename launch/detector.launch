@@ -20,5 +20,7 @@
         <arg name="visualize" value="false" />
    </include>
 
-   <node pkg="cybird_detector" type="cybird_detector_node" name="cybird_detector_node" />
+   <node pkg="cybird_detector" type="cybird_detector_node" name="cybird_detector">
+        <param name="size_mapping" type="str" value="11:0.0275,14:0.14" />
+   </node>
 </launch>

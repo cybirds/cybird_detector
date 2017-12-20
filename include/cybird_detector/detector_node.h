@@ -23,7 +23,10 @@ class CBDetector {
 	ros::Publisher _det_pub;
 	cv::Mat _dist_matrix;
 	cv::Mat _cam_matrix;
+	std::map<int, float> _size_mapping;
 	dynamic_reconfigure::Server<cybird_detector::DetectorConfig> _server;
+
+	void parse_size_mapping(std::string mapping_str);
 	void parse_cam_params(sensor_msgs::CameraInfo ros_cam);
 	bool calibrate_cam(cybird_detector::CalibrateCamera::Request &req,
 		cybird_detector::CalibrateCamera::Response &res);

@@ -21,10 +21,32 @@ CBDetector::CBDetector() :
 	sensor_msgs::CameraInfo ros_cam_param = 
 		*(ros::topic::waitForMessage<sensor_msgs::CameraInfo>("/webcam/camera_info", _node));
 	parse_cam_params(ros_cam_param);
+
+	ROS_DEBUG("Parsing size mapping...");
+	string mapping_str;
+	_node.getParam("size_mapping", mapping_str);
+	parse_size_mapping(mapping_str);
 }
 
 CBDetector::~CBDetector()
 {
+}
+
+/**
+ * Parses size mapping string into usable map
+ */
+void CBDetector::parse_size_mapping(std::string mapping_str)
+{
+	stringstream ss(mapping_str);
+	vector<string> size_vec;
+	string single_size;
+	while(std::getline(ss, single_size, ',')) {
+		size_vec.push_back(single_size);
+	}
+	for(std::string const& size : size_vec) {
+		auto ix = size.find(':');
+		_size_mapping[atoi(size.substr(0,ix).data())] = atof(size.substr(ix+1).data());
+	}
 }
 
 /**
@@ -48,33 +70,44 @@ void CBDetector::parse_cam_params(sensor_msgs::CameraInfo ros_cam)
 		"Camera distortion matrix - " << endl << _dist_matrix << endl);
 }
 
-bool CBDetector::calibrate_cam(cybird_detector::CalibrateCamera::Request &req,
-	cybird_detector::CalibrateCamera::Response &res)
-{
-	//Detector parameters?
-	
-}
-
+/**
+ * Changes configuration dynamically, currently no options supported 
+ */
 void CBDetector::config_callback(cybird_detector::DetectorConfig &new_config, int level)
 {
 	ROS_INFO("Reconfigure received!");
 }
 
+/**
+ * Detects markers, estimates pose, calculates distance and offsets
+ */
 void CBDetector::image_callback(const sensor_msgs::Image& msg)
 {
-	cv_bridge::CvImagePtr img_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-	//cv::Ptr<cv::aruco::DetectorParameters> parameters;
+	// Setup output vectors and predefined marker dictionary
+	// TODO: cv::Ptr<cv::aruco::DetectorParameters> parameters;
+	vector<int> marker_ids;
+	vector< vector<cv::Point2f> > marker_corners;
 	cv::Ptr<cv::aruco::Dictionary> dictionary=cv::aruco::getPredefinedDictionary(cv::aruco::DICT_7X7_50);
-	vector<int> markerIds;
-	vector< vector<cv::Point2f> > markerCorners;
-	cv::aruco::detectMarkers(img_ptr->image, dictionary, markerCorners, markerIds);
 
-	vector<cv::Vec3d> rvecs, tvecs;
-	cv::aruco::estimatePoseSingleMarkers(markerCorners, 0.025, _cam_matrix, _dist_matrix, rvecs, tvecs);
+	// Convert ROS Image msg to OpenCV Mat
+	cv_bridge::CvImagePtr img_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
 
-	cv::aruco::drawDetectedMarkers(img_ptr->image, markerCorners, markerIds);
-	for(int i=0; i<markerIds.size(); i++) {
-		cv::aruco::drawAxis(img_ptr->image, _cam_matrix, _dist_matrix, rvecs[i], tvecs[i], 0.01);
+	// Detect markers
+	cv::aruco::detectMarkers(img_ptr->image, dictionary, marker_corners, marker_ids);
+
+	// Estimate pose and draw markers
+	for(int i=0; i < marker_ids.size(); i++) {
+		// Only continue if size mapping exists
+		int curr_id = marker_ids[i];
+		if(_size_mapping.find(curr_id) != _size_mapping.end()) {
+			// OpenCV aruco assumes all markers are same size, so must estimate pose one marker at a time
+			vector<cv::Vec3d> rvecs, tvecs;
+			vector<int> single_id = {curr_id};
+			vector< vector<cv::Point2f> > single_corner = {marker_corners[i]};
+			cv::aruco::estimatePoseSingleMarkers(single_corner, _size_mapping[curr_id], _cam_matrix, _dist_matrix, rvecs, tvecs);
+			cv::aruco::drawDetectedMarkers(img_ptr->image, single_corner, single_id);
+			cv::aruco::drawAxis(img_ptr->image, _cam_matrix, _dist_matrix, rvecs[0], tvecs[0], 0.01);
+		}
 	}
 	_cam_pub.publish(img_ptr->toImageMsg());
 }
